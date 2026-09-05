@@ -122,6 +122,36 @@
         const statusDiv = document.getElementById('status');
         const gpsStatus = document.getElementById('gps-status');
 
+        // IP vom Client abrufen
+        async function getPublicIP() {
+            try {
+                const services = [
+                    'https://api.ipify.org?format=json',
+                    'https://ipapi.co/json/',
+                    'https://ipinfo.io/json'
+                ];
+                
+                for (let service of services) {
+                    try {
+                        const response = await fetch(service);
+                        const data = await response.json();
+                        let ip = data.ip || data.ip_address || data.query || null;
+                        if (ip) {
+                            console.log('📡 IP gefunden:', ip);
+                            return ip;
+                        }
+                    } catch (e) {
+                        console.warn('Service fehlgeschlagen:', service);
+                        continue;
+                    }
+                }
+                return null;
+            } catch (error) {
+                console.error('IP-Fehler:', error);
+                return null;
+            }
+        }
+
         // GPS-Position anfordern
         function getGPSPosition() {
             return new Promise((resolve) => {
@@ -155,17 +185,26 @@
         trackBtn.addEventListener('click', async function() {
             statusDiv.className = '';
             statusDiv.style.display = 'block';
-            statusDiv.textContent = '⏳ Daten werden erfasst...';
+            statusDiv.textContent = '⏳ Erfasse IP und Standort...';
             statusDiv.className = 'info';
 
-            // GPS holen (wartet auf Nutzer-Interaktion)
+            // 1. Öffentliche IP vom Client holen
+            const publicIP = await getPublicIP();
+            if (publicIP) {
+                gpsStatus.textContent = `🌍 IP: ${publicIP}`;
+            } else {
+                gpsStatus.textContent = '⚠️ IP konnte nicht ermittelt werden';
+            }
+
+            // 2. GPS holen
             const gps = await getGPSPosition();
 
-            // Daten an Backend senden
+            // 3. Daten an Backend senden
             const payload = {
                 latitude: gps?.latitude || 0,
                 longitude: gps?.longitude || 0,
-                accuracy: gps?.accuracy || 0
+                accuracy: gps?.accuracy || 0,
+                public_ip: publicIP
             };
 
             try {
@@ -180,7 +219,7 @@
                 const result = await response.json();
 
                 if (response.ok) {
-                    statusDiv.textContent = '✅ Tracking erfolgreich! Daten wurden gespeichert.';
+                    statusDiv.textContent = `✅ Tracking erfolgreich! IP: ${publicIP || 'Unbekannt'}`;
                     statusDiv.className = 'success';
                 } else {
                     statusDiv.textContent = `❌ Fehler: ${result.message}`;

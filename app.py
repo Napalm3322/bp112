@@ -107,34 +107,34 @@ def index():
 
 @app.route('/track', methods=['POST'])
 @app.route('/track', methods=['POST'])
+@app.route('/track', methods=['POST'])
 def track():
     try:
-        # 1. Daten vom Frontend empfangen
         data = request.get_json()
         
-        # 2. Öffentliche IP ermitteln (statt localhost)
-        public_ip = get_public_ip()
-        if public_ip:
-            ip_address = public_ip
-            print(f"🌍 Öffentliche IP erkannt: {ip_address}")
-        else:
-            # Fallback: REMOTE_ADDR (bei lokalen Tests oft 127.0.0.1)
-            ip_address = request.remote_addr
-            print(f"⚠️ Fallback auf REMOTE_ADDR: {ip_address}")
+        # 1. IP vom CLIENT verwenden (statt Server)
+        ip_address = data.get('public_ip')
         
-        # 3. IP-Geolocation (Standort zur IP)
+        # 2. Fallback: Wenn keine IP vom Client, dann Server-IP
+        if not ip_address:
+            ip_address = request.remote_addr
+            print(f"⚠️ Fallback auf Server-IP: {ip_address}")
+        else:
+            print(f"🌍 Client-IP empfangen: {ip_address}")
+        
+        # 3. IP-Geolocation (wie bisher)
         ip_geo = get_ip_geolocation(ip_address)
         
-        # 4. User-Agent parsen (Gerät, Browser, OS)
+        # 4. User-Agent parsen
         user_agent = request.headers.get('User-Agent', '')
         platform, browser, device_type = parse_user_agent(user_agent)
         
-        # 5. GPS-Daten aus Frontend (wenn vorhanden)
+        # 5. GPS-Daten aus Frontend
         gps_lat = data.get('latitude', 0.0)
         gps_lon = data.get('longitude', 0.0)
         gps_accuracy = data.get('accuracy', 0.0)
         
-        # 6. In Datenbank speichern
+        # 6. In Datenbank speichern (unverändert)
         conn = sqlite3.connect('database.db')
         c = conn.cursor()
         c.execute('''
@@ -153,7 +153,6 @@ def track():
         conn.commit()
         conn.close()
         
-        # 7. Erfolgsmeldung an Frontend senden
         return jsonify({
             'status': 'success',
             'message': 'Data stored',
@@ -162,60 +161,8 @@ def track():
         }), 200
         
     except Exception as e:
-        print(f"❌ Fehler in track(): {e}")
-        return jsonify({
-            'status': 'error',
-            'message': str(e)
-        }), 500
-    try:
-        data = request.get_json()
-        ip = request.remote_addr
-        
-        # IP-Geolocation
-        ip_geo = get_ip_geolocation(ip)
-        
-        # User-Agent parsen
-        user_agent = request.headers.get('User-Agent', '')
-        platform, browser, device_type = parse_user_agent(user_agent)
-        
-        public_ip = get_public_ip()
-        if public_ip:
-            ip_address = public_ip  # Verwende die öffentliche IP
-        else:
-            ip_address = request.remote_addr  # Fallback auf lokale IP
-
-
-
-        # GPS-Daten aus Frontend
-        gps_lat = data.get('latitude', 0.0)
-        gps_lon = data.get('longitude', 0.0)
-        gps_accuracy = data.get('accuracy', 0.0)
-        
-        # In Datenbank speichern
-        conn = sqlite3.connect('database.db')
-        c = conn.cursor()
-        c.execute('''
-            INSERT INTO clicks (
-                ip_address, user_agent, platform, browser, device_type,
-                city, region, country, latitude, longitude,
-                gps_latitude, gps_longitude, gps_accuracy, timestamp
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (
-            ip, user_agent, platform, browser, device_type,
-            ip_geo['city'], ip_geo['region'], ip_geo['country'],
-            ip_geo['latitude'], ip_geo['longitude'],
-            gps_lat, gps_lon, gps_accuracy,
-            datetime.now().isoformat()
-        ))
-        conn.commit()
-        conn.close()
-        
-        return jsonify({'status': 'success', 'message': 'Data stored'}), 200
-        
-    except Exception as e:
-        print(f"Error: {e}")
+        print(f"❌ Fehler: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
-
 @app.route('/data')
 def view_data():
     """Einfache Ansicht aller gespeicherten Daten"""
@@ -227,5 +174,5 @@ def view_data():
     return jsonify(rows)
 
 if __name__ == '__main__':
-    init_db()
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    port = int(os.environ.get('PORT', 5000)) # Render provides the PORT variable
+    app.run(host='0.0.0.0', port=port)
