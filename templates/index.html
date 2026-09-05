@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Link Tracker</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0d1117;
+            color: #e6edf3;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .container {
+            background: #161b22;
+            padding: 2.5rem;
+            border-radius: 16px;
+            border: 1px solid #30363d;
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+        }
+        h1 {
+            font-size: 1.8rem;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(135deg, #58a6ff, #1f6feb);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .subtitle {
+            color: #8b949e;
+            font-size: 0.95rem;
+            margin-bottom: 2rem;
+        }
+        .track-link {
+            display: inline-block;
+            background: #1f6feb;
+            color: white;
+            padding: 14px 40px;
+            border-radius: 8px;
+            font-size: 1.2rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s;
+            cursor: pointer;
+            border: none;
+        }
+        .track-link:hover {
+            background: #388bfd;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 16px rgba(31, 111, 235, 0.4);
+        }
+        .track-link:active {
+            transform: scale(0.96);
+        }
+        #status {
+            margin-top: 1.5rem;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            min-height: 50px;
+            display: none;
+        }
+        .success {
+            background: #1c2e1f;
+            color: #3fb950;
+            border: 1px solid #2ea043;
+            display: block !important;
+        }
+        .error {
+            background: #2d1b1b;
+            color: #f85149;
+            border: 1px solid #da3633;
+            display: block !important;
+        }
+        .info {
+            background: #1c2333;
+            color: #58a6ff;
+            border: 1px solid #1f6feb;
+            display: block !important;
+        }
+        .privacy-note {
+            margin-top: 2rem;
+            font-size: 0.75rem;
+            color: #484f58;
+        }
+        .privacy-note a {
+            color: #58a6ff;
+            text-decoration: none;
+        }
+        #gps-status {
+            font-size: 0.8rem;
+            color: #8b949e;
+            margin-top: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔗 Link Tracker</h1>
+        <p class="subtitle">Klick auf den Link erfasst Gerät &amp; Standort</p>
+
+        <button class="track-link" id="trackBtn">
+            📍 Jetzt klicken &amp; tracken
+        </button>
+
+        <div id="status"></div>
+        <div id="gps-status"></div>
+
+        <div class="privacy-note">
+            <small>Durch Klicken stimmen Sie der Erfassung von IP, Gerätetyp und GPS-Position (nach Zustimmung) zu.</small>
+        </div>
+    </div>
+
+    <script>
+        const trackBtn = document.getElementById('trackBtn');
+        const statusDiv = document.getElementById('status');
+        const gpsStatus = document.getElementById('gps-status');
+
+        // GPS-Position anfordern
+        function getGPSPosition() {
+            return new Promise((resolve) => {
+                if (!navigator.geolocation) {
+                    gpsStatus.textContent = '⚠️ GPS nicht verfügbar (Fallback: IP-Geolocation)';
+                    resolve(null);
+                    return;
+                }
+
+                gpsStatus.textContent = '📡 GPS wird abgefragt... Bitte erlauben Sie den Zugriff.';
+
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        gpsStatus.textContent = `✅ GPS: ${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)} (±${position.coords.accuracy}m)`;
+                        resolve({
+                            latitude: position.coords.latitude,
+                            longitude: position.coords.longitude,
+                            accuracy: position.coords.accuracy
+                        });
+                    },
+                    (error) => {
+                        console.warn('GPS-Fehler:', error.message);
+                        gpsStatus.textContent = `⚠️ GPS nicht verfügbar (${error.message}) - verwende IP-Geolocation`;
+                        resolve(null);
+                    },
+                    { enableHighAccuracy: true, timeout: 10000 }
+                );
+            });
+        }
+
+        trackBtn.addEventListener('click', async function() {
+            statusDiv.className = '';
+            statusDiv.style.display = 'block';
+            statusDiv.textContent = '⏳ Daten werden erfasst...';
+            statusDiv.className = 'info';
+
+            // GPS holen (wartet auf Nutzer-Interaktion)
+            const gps = await getGPSPosition();
+
+            // Daten an Backend senden
+            const payload = {
+                latitude: gps?.latitude || 0,
+                longitude: gps?.longitude || 0,
+                accuracy: gps?.accuracy || 0
+            };
+
+            try {
+                const response = await fetch('/track', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    statusDiv.textContent = '✅ Tracking erfolgreich! Daten wurden gespeichert.';
+                    statusDiv.className = 'success';
+                } else {
+                    statusDiv.textContent = `❌ Fehler: ${result.message}`;
+                    statusDiv.className = 'error';
+                }
+            } catch (error) {
+                statusDiv.textContent = `❌ Netzwerkfehler: ${error.message}`;
+                statusDiv.className = 'error';
+            }
+        });
+    </script>
+</body>
+</html>
